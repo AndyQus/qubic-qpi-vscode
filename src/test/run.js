@@ -207,13 +207,6 @@ function collectDiagnostics(content) {
 
 // ── Copied logic (mirrors extension.ts exactly) ──────────────────────────
 
-const QPI_KEYWORDS = [
-    'PUBLIC_PROCEDURE','PUBLIC_FUNCTION','PUBLIC_PROCEDURE_WITH_LOCALS',
-    'PUBLIC_FUNCTION_WITH_LOCALS','BEGIN_EPOCH','END_EPOCH',
-    'BEGIN_TICK','END_TICK','REGISTER_USER_FUNCTIONS_AND_PROCEDURES',
-];
-const QPI_KEYWORD_REGEX = new RegExp(QPI_KEYWORDS.join('|'));
-
 function stripStringsAndComments(line) {
     let result = '';
     let i = 0;
@@ -241,29 +234,72 @@ function stripStringsAndComments(line) {
     return result;
 }
 
+function countBraceDelta(s) {
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+        if (s[i] === '{') n++;
+        else if (s[i] === '}') n--;
+    }
+    return n;
+}
+
+function braceDepthBeforeIndexInLine(stripped, pos, braceDepthAtLineStart) {
+    let d = braceDepthAtLineStart;
+    for (let i = 0; i < pos; i++) {
+        if (stripped[i] === '{') d++;
+        else if (stripped[i] === '}') d--;
+    }
+    return d;
+}
+
+function isQpiHIncludeLine(commentFree) {
+    return /^#\s*include\s*["<]qpi\.h[">]/.test(commentFree.trim());
+}
+
 function diagsForText(content) {
     const lines = content.split('\n');
     const diagnostics = [];
 
-    if (!QPI_KEYWORD_REGEX.test(content)) return diagnostics;
+    // Same gate as extension.ts lintDocument (ContractBase inheritance)
+    if (!/\bContractBase\b/.test(content)) return diagnostics;
+
+    let braceDepth = 0;
 
     for (let li = 0; li < lines.length; li++) {
         const lineText = lines[li];
+        const stripped = stripStringsAndComments(lineText);
+        const braceDepthAtLineStart = braceDepth;
 
-        // QPI001
-        if (/^\s*#include\s*[<"]/.test(lineText)) {
-            const col = lineText.indexOf('#include');
-            diagnostics.push({ code: 'QPI001', line: li, severity: DiagnosticSeverity.Warning });
+        // QPI001 — any # except #include "qpi.h" / <qpi.h>
+        if (/^\s*#/.test(stripped)) {
+            if (!isQpiHIncludeLine(stripped)) {
+                diagnostics.push({ code: 'QPI001', line: li, severity: DiagnosticSeverity.Warning });
+            }
+            braceDepth += countBraceDelta(stripped);
             continue;
         }
 
-        const stripped = stripStringsAndComments(lineText);
+        // QPI016 — typedef / using scope (mirrors extension.ts)
+        const typedefRe = /\btypedef\b/g;
+        let tm;
+        while ((tm = typedefRe.exec(stripped)) !== null) {
+            if (braceDepthBeforeIndexInLine(stripped, tm.index, braceDepthAtLineStart) === 0) {
+                diagnostics.push({ code: 'QPI016', line: li, severity: DiagnosticSeverity.Error });
+            }
+        }
+        const masked = stripped.replace(/using\s+namespace\s+QPI\b/g, (s) => ' '.repeat(s.length));
+        const usingRe = /\busing\b/g;
+        while ((tm = usingRe.exec(masked)) !== null) {
+            if (braceDepthBeforeIndexInLine(masked, tm.index, braceDepthAtLineStart) === 0) {
+                diagnostics.push({ code: 'QPI016', line: li, severity: DiagnosticSeverity.Error });
+            }
+        }
 
         // QPI002
         const divRe = /(?<![/*=])\/(?![/*=])/g;
         let m;
         while ((m = divRe.exec(stripped)) !== null) {
-            diagnostics.push({ code: 'QPI002', line: li, col: m.index, severity: DiagnosticSeverity.Warning });
+            diagnostics.push({ code: 'QPI002', line: li, col: m.index, severity: DiagnosticSeverity.Error });
         }
 
         // QPI003
@@ -271,6 +307,8 @@ function diagsForText(content) {
         while ((m = modRe.exec(stripped)) !== null) {
             diagnostics.push({ code: 'QPI003', line: li, col: m.index, severity: DiagnosticSeverity.Error });
         }
+
+        braceDepth += countBraceDelta(stripped);
     }
 
     // QPI010 / QPI011 — block balance
@@ -315,12 +353,29 @@ function countDiag(diags, code) { return diags.filter(d => d.code === code).leng
 // ── TESTS ──
 // ---------------------------------------------------------------------------
 
-// Anchor keyword used in all contract-level tests
-const ANCHOR = '\nPUBLIC_PROCEDURE(Test)\n{\n}\nREGISTER_USER_FUNCTIONS_AND_PROCEDURES\n{\n    REGISTER_USER_PROCEDURE(Test, 1);\n}\nBEGIN_EPOCH\n{\n}\nEND_EPOCH\nBEGIN_TICK\n{\n}\nEND_TICK\n';
+// Minimal contract body (matches extension: must inherit ContractBase)
+const ANCHOR = `struct T : public ContractBase
+{
+PUBLIC_PROCEDURE(Test)
+{
+}
+REGISTER_USER_FUNCTIONS_AND_PROCEDURES
+{
+    REGISTER_USER_PROCEDURE(Test, 1);
+}
+BEGIN_EPOCH
+{
+}
+END_EPOCH
+BEGIN_TICK
+{
+}
+END_TICK
+}`;
 
 section('Non-QPI files are ignored');
 assert(diagsForText('int x = 1 / 2;').length === 0,
-    'Plain C++ without QPI keywords → no diagnostics');
+    'Plain C++ without ContractBase → no diagnostics');
 
 // ── QPI001 ──────────────────────────────────────────────────────────────────
 section('QPI001 — #include in QPI contract');
@@ -331,8 +386,27 @@ section('QPI001 — #include in QPI contract');
     const quoted = diagsForText('#include "myfile.h"\n' + ANCHOR);
     assert(hasDiag(quoted, 'QPI001'), '#include "myfile.h" → QPI001');
 
+    const qpiOk = diagsForText('#include "qpi.h"\n' + ANCHOR);
+    assert(!hasDiag(qpiOk, 'QPI001'), '#include "qpi.h" → no QPI001');
+
+    const qpiAngle = diagsForText('#include <qpi.h>\n' + ANCHOR);
+    assert(!hasDiag(qpiAngle, 'QPI001'), '#include <qpi.h> → no QPI001');
+
+    const def = diagsForText('#define FOO 1\n' + ANCHOR);
+    assert(hasDiag(def, 'QPI001'), '#define → QPI001');
+
     const no = diagsForText('// #include <stdlib.h>\n' + ANCHOR);
     assert(!hasDiag(no, 'QPI001'), '#include in comment → no QPI001');
+}
+
+// ── QPI016 — typedef / using scope (mirrors extension.ts) ───────────────────
+section('QPI016 — typedef and using at file scope');
+{
+    const badTypedef = diagsForText('typedef uint64 Bad;\n' + ANCHOR);
+    assert(hasDiag(badTypedef, 'QPI016'), 'typedef before contract struct → QPI016');
+
+    const okUsing = diagsForText('using namespace QPI;\n' + ANCHOR);
+    assert(!hasDiag(okUsing, 'QPI016'), 'using namespace QPI before contract → no QPI016');
 }
 
 // ── QPI002 ──────────────────────────────────────────────────────────────────
@@ -340,6 +414,8 @@ section('QPI002 — raw / division');
 {
     const yes = diagsForText(ANCHOR + '\nuint64 r = a / b;\n');
     assert(hasDiag(yes, 'QPI002'), 'a / b → QPI002');
+    assert(yes.find(d => d.code === 'QPI002').severity === DiagnosticSeverity.Error,
+        'QPI002 has Error severity');
 
     const noCmt = diagsForText(ANCHOR + '\n// uint64 r = a / b;\n');
     assert(!hasDiag(noCmt, 'QPI002'), '/ inside line comment → no QPI002');

@@ -10,8 +10,8 @@ VS Code extension providing language support for **Qubic Smart Contracts** writt
 - QPI control macros highlighted as keywords (`PUBLIC_PROCEDURE`, `BEGIN_EPOCH`, etc.)
 - QPI built-in types styled as storage types (`id`, `sint64`, `uint64`, `Array`, etc.)
 - QPI API calls styled as support functions (`qpi.transfer`, `qpi.K12`, etc.)
-- Raw `#include` directives flagged visually as deprecated/invalid
-- Raw `/` division operator flagged visually as illegal
+- Raw `#include` directives flagged as invalid (except `#include "qpi.h"` / `<qpi.h>` for local IntelliSense)
+- Raw `/` and `%` operators flagged as illegal (use `div` / `mod`)
 
 ### Snippets
 | Prefix | Description |
@@ -27,16 +27,26 @@ VS Code extension providing language support for **Qubic Smart Contracts** writt
 Snippets are available in both `qpi` and `cpp` language modes.
 
 ### Linter (Diagnostics)
-The extension analyses `.h` files that contain QPI keywords and reports:
+The extension analyses `.h` files that inherit from `ContractBase` and applies the [QPI C++ restrictions](https://docs.qubic.org/developers/qpi/) (no stack locals except via `_WITH_LOCALS` macros, no raw pointers/`[]`, no `#` except optional `qpi.h` include for IDE use, no `float`/`double`, use `div`/`mod` instead of `/`/`%`, no string/char literals, no `...`, no `__`, limited `::`, no `union`, controlled `typedef`/`using`, QPI integer types only, etc.):
 
 | Code | Severity | Rule |
 |---|---|---|
-| `QPI001` | Warning | `#include` directive found — not allowed in QPI contracts |
-| `QPI002` | Warning | Raw `/` division operator — use `div(a, b)` instead |
-| `QPI003` | Error | Raw `%` modulo operator — use `mod(a, b)` instead |
-| `QPI010` | Error | `BEGIN_EPOCH` block is missing its closing `END_EPOCH` |
-| `QPI011` | Error | `BEGIN_TICK` block is missing its closing `END_TICK` |
-| `QPI012` | Warning | `PUBLIC_PROCEDURE` / `PUBLIC_FUNCTION` declared but not registered |
+| `QPI001` | Warning | Preprocessor `#` — prohibited except `#include "qpi.h"` / `<qpi.h>` for local IntelliSense (remove before deploy) |
+| `QPI002` | Error | `/` operator prohibited — use `div(a, b)` |
+| `QPI003` | Error | `%` operator prohibited — use `mod(a, b)` |
+| `QPI004` | Error | String literals (double quotes) prohibited |
+| `QPI005` | Error | Character literals (single quotes) prohibited |
+| `QPI006` | Error | `[` and `]` prohibited |
+| `QPI007` | Error | `...` (variadic / parameter packs) prohibited |
+| `QPI008` | Warning | `::` only for types/namespaces in this contract or `QPI` from `qpi.h` |
+| `QPI009` | Error | `*` except for multiplication (no pointers) |
+| `QPI010` | Error | `BEGIN_EPOCH` without matching `END_EPOCH` |
+| `QPI011` | Error | `BEGIN_TICK` without matching `END_TICK` |
+| `QPI012` | Warning | `PUBLIC_PROCEDURE` / `PUBLIC_FUNCTION` not registered |
+| `QPI013` | Error | `__` (double underscore) prohibited |
+| `QPI014` | Error | `float`, `double`, `union`, `const_cast`, `QpiContext` prohibited |
+| `QPI015` | Error | Native C/C++ `int` / `char` / `short` / `long` / `bool` / `signed` / `unsigned` — use QPI types |
+| `QPI016` | Error | `typedef` / `using` only in local scope; `using namespace QPI` allowed at file scope |
 
 The linter and validator run on file open, save, and every keystroke.
 
@@ -95,9 +105,11 @@ The linter activates automatically for `.h` files that contain QPI keywords. Pro
 
 | Code | Colour | What to do |
 |---|---|---|
-| `QPI001` | Yellow (Warning) | Remove `#include` — use QPI built-ins instead |
-| `QPI002` | Yellow (Warning) | Replace `/` with `div(a, b)` |
+| `QPI001` | Yellow (Warning) | Remove `#` lines or keep only `#include "qpi.h"` / `<qpi.h>` for IDE, then remove for deployment |
+| `QPI002` | Red (Error) | Replace `/` with `div(a, b)` |
 | `QPI003` | Red (Error) | Replace `%` with `mod(a, b)` |
+| `QPI004`–`QPI009`, `QPI013`–`QPI016` | Red (Error) | Match the restriction named in the Problems panel message |
+| `QPI008` | Yellow (Warning) | Use `::` only for contract types or `QPI::…` from `qpi.h` |
 | `QPI010` | Red (Error) | Add missing `END_EPOCH` after `BEGIN_EPOCH` |
 | `QPI011` | Red (Error) | Add missing `END_TICK` after `BEGIN_TICK` |
 | `QPI012` | Yellow (Warning) | Register the procedure/function (see Section 7) |
@@ -160,16 +172,16 @@ The index (`1`, `2`, …) is the call index used by clients to invoke the entry 
 
 ## QPI-Specific Rules
 
-### No `#include`
-QPI contracts run inside the Qubic node sandbox. Standard library headers are unavailable and forbidden. Use QPI built-in types and the `qpi` API object exclusively.
+### Preprocessor (`#`)
+All preprocessor directives are prohibited in deployed contracts. For local development you may add `#include "qpi.h"` or `#include <qpi.h>` so IntelliSense understands QPI types; remove every `#` line before the contract is deployed. Use QPI built-in types and the `qpi` API object exclusively.
 
 ### Integer Division and Modulo
-The C++ `/` and `%` operators produce undefined behaviour for certain operands inside the Qubic execution environment. Always use:
-- `div(dividend, divisor)` instead of `a / b`
-- `mod(dividend, divisor)` instead of `a % b`
+The `/` and `%` operators are prohibited in QPI contracts (e.g. division by zero can yield inconsistent state). Always use:
+- `div(dividend, divisor)` instead of `a / b` (returns zero if the divisor is zero)
+- `mod(dividend, divisor)` instead of `a % b` (returns zero if the divisor is zero)
 
 ### `div()` and `mod()` are safe and valid
-The linter flags raw `/` but does **not** flag `div()` or `mod()` — they are the recommended QPI idioms.
+The linter flags raw `/` and `%` but does **not** flag `div()` or `mod()` — they are the required QPI idioms.
 
 ### Supported QPI API (`qpi.*`)
 | Method | Description |
@@ -216,7 +228,7 @@ Install the `.vsix` via *Extensions: Install from VSIX* in VS Code.
 ### Phase 1 - MVP (this release)
 - [x] Syntax Highlighting (QPI keywords, macros, types)
 - [x] Code Snippets (PUBLIC_PROCEDURE, PUBLIC_FUNCTION, contract skeleton)
-- [x] Linter: Warning on `#include` and raw `/` division
+- [x] Linter: QPI language restrictions (`#`, `/`, `%`, pointers, native types, etc.)
 - [x] "New Qubic SC" template command
 
 ### Phase 2 - Comfort

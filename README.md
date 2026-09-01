@@ -2,8 +2,10 @@
 
 VS Code extension providing language support for **Qubic Smart Contracts** written with the Qubic Public Interface (QPI).
 
-> **Compatibility:** Tested against [qubic/core v1.286.0](https://github.com/qubic/core/releases/tag/v1.286.0) (Epoch 208, released 2026-04-08).
-> The QPI API coverage in this extension reflects `src/contract_core/qpi.h` at that release.
+> **Compatibility:** Tested against [qubic/core v1.302.1](https://github.com/qubic/core/releases/tag/v1.302.1) (Epoch 226, released 2026-08-31).
+> The QPI API coverage in this extension reflects the `src/qpi/` headers at that release.
+> Note that as of core v1.302.x the QPI header moved out of `src/contracts/qpi.h` into the modular `src/qpi/` layout
+> (`qpi_types.h`, `qpi_containers.h`, `qpi_context.h`, `qpi_macros.h`, ...).
 > If Qubic core has been updated since then, check [GitHub Issue #5](https://github.com/AndyQus/qubic-qpi-vscode/issues/5) for the latest sync status.
 
 ---
@@ -53,6 +55,7 @@ The extension analyses `.h` files that inherit from `ContractBase` and applies t
 | `QPI015` | Error | Native C/C++ `int` / `char` / `short` / `long` / `bool` / `signed` / `unsigned` — use QPI types |
 | `QPI016` | Error | `typedef` / `using` only in local scope; `using namespace QPI` allowed at file scope |
 | `QPI017` | Warning | `@procedure` / `@function` declared in doc-comment but not found in contract body |
+| `QPI018` | Error | `Collection` / `LinkedList` / `HashMap` / `HashSet` used in a `<name>_input` / `<name>_output` struct (public interface) |
 
 The linter and validator run on file open, save, and every keystroke.
 
@@ -362,6 +365,7 @@ Install the `.vsix` via *Extensions: Install from VSIX* in VS Code.
 - [x] JSDoc-style contract metadata (`@contract`, `@description`, `@procedure`, `@function`, `@state`)
 - [x] Hover documentation from doc-comment metadata
 - [x] QPI017 — warning when `@procedure`/`@function` declared but missing from code
+- [x] QPI018 — error when complex containers appear in the public interface (core v1.302.1)
 - [x] `qpi-contract-doc` snippet
 
 ### Phase 3 - Power

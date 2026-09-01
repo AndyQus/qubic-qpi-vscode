@@ -10,7 +10,6 @@
     ],
     "description": "QPI PUBLIC_PROCEDURE block — no local variables"
   },
-
   "QPI Public Function": {
     "prefix": "qpi-function",
     "scope": "qpi,cpp",
@@ -23,7 +22,6 @@
     ],
     "description": "QPI PUBLIC_FUNCTION block — no local variables, must return a value"
   },
-
   "QPI Public Procedure With Locals": {
     "prefix": "qpi-procedure-locals",
     "scope": "qpi,cpp",
@@ -38,7 +36,6 @@
     ],
     "description": "QPI PUBLIC_PROCEDURE_WITH_LOCALS — allows local variable declarations"
   },
-
   "QPI Public Function With Locals": {
     "prefix": "qpi-function-locals",
     "scope": "qpi,cpp",
@@ -54,7 +51,6 @@
     ],
     "description": "QPI PUBLIC_FUNCTION_WITH_LOCALS — allows local variables, must return a value"
   },
-
   "QPI Contract Skeleton": {
     "prefix": "qpi-contract",
     "scope": "qpi,cpp",
@@ -118,7 +114,6 @@
     ],
     "description": "Full Qubic Smart Contract skeleton with state, I/O structs, epoch/tick hooks, and registration"
   },
-
   "QPI Epoch Block": {
     "prefix": "qpi-epoch",
     "scope": "qpi,cpp",
@@ -131,7 +126,6 @@
     ],
     "description": "QPI BEGIN_EPOCH / END_EPOCH block — runs once per epoch"
   },
-
   "QPI Tick Block": {
     "prefix": "qpi-tick",
     "scope": "qpi,cpp",
@@ -144,7 +138,6 @@
     ],
     "description": "QPI BEGIN_TICK / END_TICK block — runs once per tick"
   },
-
   "QPI Contract Doc Comment": {
     "prefix": "qpi-contract-doc",
     "scope": "qpi,cpp",
@@ -160,5 +153,51 @@
       " */"
     ],
     "description": "JSDoc-style contract metadata block for AI coding agents and documentation"
+  },
+  "QPI Private Procedure": {
+    "prefix": "qpi-private-procedure",
+    "body": [
+      "PRIVATE_PROCEDURE(${1:Name})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declares a procedure callable only from inside this contract."
+  },
+  "QPI Private Function": {
+    "prefix": "qpi-private-function",
+    "body": [
+      "PRIVATE_FUNCTION(${1:Name})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declares a read-only function callable only from inside this contract."
+  },
+  "QPI Entry Point Input/Output Structs": {
+    "prefix": "qpi-io-structs",
+    "body": [
+      "struct ${1:name}_input",
+      "{",
+      "\t${2:uint64 value;}",
+      "};",
+      "",
+      "struct ${1:name}_output",
+      "{",
+      "\t${3:sint64 result;}",
+      "};",
+      "$0"
+    ],
+    "description": "Input/output struct pair for a public procedure or function. Only integer/bool types, id, Array, BitArray and structs of those are allowed here (QPI018)."
+  },
+  "QPI Initialize Block": {
+    "prefix": "qpi-initialize",
+    "body": [
+      "INITIALIZE()",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "System procedure run once when the contract is constructed."
   }
 }

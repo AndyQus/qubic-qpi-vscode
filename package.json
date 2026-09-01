@@ -2,7 +2,7 @@
   "name": "qubic-org-qpi",
   "displayName": "Qubic Programming Interface (QPI) Language Support",
   "description": "Language support for Qubic Smart Contracts (QPI)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "AndyQus",
   "engines": {
     "vscode": "^1.85.0"

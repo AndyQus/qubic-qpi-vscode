@@ -287,6 +287,54 @@ const QPI_METHODS: QpiMethod[] = [
         returns: 'sint64',
         description: 'Places an IPO bid. Returns the bid index or a negative value on error.',
     },
+    {
+        name: 'computeMiningFunction',
+        signature: 'qpi.computeMiningFunction(miningSeed: id, publicKey: id, nonce: id)',
+        returns: 'id',
+        description: 'Runs the Qubic mining score function and returns the first 256 bits of the output.',
+    },
+    {
+        name: 'setShareholderProposal',
+        signature: 'qpi.setShareholderProposal(contractIndex: uint16, proposalDataBuffer: Array<uint8, 1024>, invocationReward: sint64)',
+        returns: 'uint16',
+        description: 'Invokes `SET_SHAREHOLDER_PROPOSAL` of `contractIndex`. Returns the proposal index, or `INVALID_PROPOSAL_INDEX` on error.\n\nNote: does **not** check shareholder status or the proposal data buffer.',
+    },
+    {
+        name: 'setShareholderVotes',
+        signature: 'qpi.setShareholderVotes(contractIndex: uint16, shareholderVoteData: ProposalMultiVoteDataV1, invocationReward: sint64)',
+        returns: 'bit',
+        description: 'Invokes `SET_SHAREHOLDER_VOTES` of `contractIndex`. Returns whether the call succeeded.\n\nNote: does **not** check shareholder status or the vote data.',
+    },
+    {
+        name: 'getOracleQuery',
+        signature: 'qpi.getOracleQuery<OracleInterface>(queryId: sint64, query: OracleInterface::OracleQuery&)',
+        returns: 'bit',
+        description: 'Reads an oracle query by `queryId`. Returns whether the id was found and matches the oracle interface; `query` is only written when `true` is returned.',
+    },
+    {
+        name: 'getOracleQueryStatus',
+        signature: 'qpi.getOracleQueryStatus(queryId: sint64)',
+        returns: 'uint8',
+        description: 'Returns the status of an oracle query as one of the `ORACLE_QUERY_STATUS_*` constants (`PENDING`, `COMMITTED`, `SUCCESS`, `UNRESOLVABLE`, `TIMEOUT`, `UNKNOWN`).',
+    },
+    {
+        name: 'getOracleReply',
+        signature: 'qpi.getOracleReply<OracleInterface>(queryId: sint64, reply: OracleInterface::OracleReply&)',
+        returns: 'bit',
+        description: 'Reads an oracle reply by `queryId`. Returns whether the id was found, matches the oracle interface, and a valid reply is available; `reply` is only written when `true` is returned.',
+    },
+    {
+        name: 'unsubscribeOracle',
+        signature: 'qpi.unsubscribeOracle(oracleSubscriptionId: sint32)',
+        returns: 'bit',
+        description: 'Unsubscribes an oracle by subscription id. Returns `false` if `oracleSubscriptionId` is invalid.',
+    },
+    {
+        name: 'getOcInvocationStatus',
+        signature: 'qpi.getOcInvocationStatus(invocationId: sint64)',
+        returns: 'uint8',
+        description: 'Returns the status of an outsourced-computation invocation (from `INVOKE_OC()`) as one of the `OC_INVOCATION_STATUS_*` constants (`PENDING_AUTH`, `AUTHORIZED`, `TIMEOUT`, `UNKNOWN`).',
+    },
 ];
 
 // Lookup map for hover provider
@@ -294,6 +342,70 @@ const QPI_METHOD_MAP = new Map<string, QpiMethod>(QPI_METHODS.map((m) => [m.name
 
 // Documentation for QPI control keywords
 const QPI_KEYWORD_DOCS: Record<string, string> = {
+    PRIVATE_PROCEDURE:
+        '**PRIVATE_PROCEDURE(Name)**\n\nDeclares a procedure callable only from inside this contract (not registered as a user entry point). May modify state.',
+    PRIVATE_PROCEDURE_WITH_LOCALS:
+        '**PRIVATE_PROCEDURE_WITH_LOCALS(Name)**\n\nLike `PRIVATE_PROCEDURE`, but with a `locals` struct for local variables.',
+    PRIVATE_FUNCTION:
+        '**PRIVATE_FUNCTION(Name)**\n\nDeclares a read-only function callable only from inside this contract. May NOT modify state.',
+    PRIVATE_FUNCTION_WITH_LOCALS:
+        '**PRIVATE_FUNCTION_WITH_LOCALS(Name)**\n\nLike `PRIVATE_FUNCTION`, but with a `locals` struct for local variables.',
+    BEGIN_EPOCH_WITH_LOCALS:
+        '**BEGIN_EPOCH_WITH_LOCALS()**\n\nStart-of-epoch system procedure with a `locals` struct. Must be closed with `END_EPOCH_WITH_LOCALS()`.',
+    END_EPOCH_WITH_LOCALS:
+        '**END_EPOCH_WITH_LOCALS()**\n\nCloses a `BEGIN_EPOCH_WITH_LOCALS()` block.',
+    BEGIN_TICK_WITH_LOCALS:
+        '**BEGIN_TICK_WITH_LOCALS()**\n\nPer-tick system procedure with a `locals` struct. Must be closed with `END_TICK_WITH_LOCALS()`.',
+    END_TICK_WITH_LOCALS:
+        '**END_TICK_WITH_LOCALS()**\n\nCloses a `BEGIN_TICK_WITH_LOCALS()` block.',
+    INITIALIZE:
+        '**INITIALIZE()**\n\nSystem procedure run once when the contract is constructed. Use it to set up initial state. Closed with `END_INITIALIZE()` style pairing via `INITIALIZE_WITH_LOCALS` when locals are needed.',
+    INITIALIZE_WITH_LOCALS:
+        '**INITIALIZE_WITH_LOCALS()**\n\nLike `INITIALIZE`, but with a `locals` struct.',
+    EXPAND:
+        '**EXPAND()**\n\nSystem procedure invoked when the contract state size is increased. Use it to migrate existing data into the larger state layout.',
+    MIGRATE:
+        '**MIGRATE()**\n\nSystem procedure for migrating contract state to a new state type.',
+    MIGRATE_WITH_LOCALS:
+        '**MIGRATE_WITH_LOCALS()**\n\nLike `MIGRATE`, but with a `locals` struct.',
+    REGISTER_USER_FUNCTION:
+        '**REGISTER_USER_FUNCTION(Name, inputType)**\n\nRegisters a single public function as a user-callable entry point. Used inside `REGISTER_USER_FUNCTIONS_AND_PROCEDURES()`.',
+    REGISTER_USER_PROCEDURE:
+        '**REGISTER_USER_PROCEDURE(Name, inputType)**\n\nRegisters a single public procedure as a user-callable entry point. Used inside `REGISTER_USER_FUNCTIONS_AND_PROCEDURES()`.',
+    CALL:
+        '**CALL(Name, input, output)**\n\nCalls another function or procedure within the same contract.',
+    CALL_OTHER_CONTRACT_FUNCTION:
+        '**CALL_OTHER_CONTRACT_FUNCTION(Contract, Name, input, output)**\n\nCalls a public function of another contract (read-only). Nested call depth is limited (currently 10).',
+    INVOKE_OTHER_CONTRACT_PROCEDURE:
+        '**INVOKE_OTHER_CONTRACT_PROCEDURE(Contract, Name, input, output, invocationReward)**\n\nInvokes a public procedure of another contract, optionally transferring an invocation reward.',
+    SELF:
+        '**SELF**\n\nThe `id` of this contract.',
+    SELF_INDEX:
+        '**SELF_INDEX**\n\nThe contract index of this contract.',
+    SUBSCRIBE_ORACLE:
+        '**SUBSCRIBE_ORACLE(...)**\n\nSubscribes the contract to an oracle interface. Returns a subscription id usable with `qpi.unsubscribeOracle()`.',
+    QUERY_ORACLE:
+        '**QUERY_ORACLE(...)**\n\nIssues an oracle query. Use `qpi.getOracleQueryStatus()` and `qpi.getOracleReply()` to retrieve the result later.',
+    INVOKE_OC:
+        '**INVOKE_OC(...)**\n\nInvokes an outsourced computation. Returns an invocation id; check progress with `qpi.getOcInvocationStatus()`.',
+    LOG_INFO:
+        '**LOG_INFO(message)**\n\nEmits an informational contract log entry.',
+    LOG_DEBUG:
+        '**LOG_DEBUG(message)**\n\nEmits a debug-level contract log entry.',
+    LOG_WARNING:
+        '**LOG_WARNING(message)**\n\nEmits a warning-level contract log entry.',
+    LOG_ERROR:
+        '**LOG_ERROR(message)**\n\nEmits an error-level contract log entry.',
+    POST_INCOMING_TRANSFER:
+        '**POST_INCOMING_TRANSFER()**\n\nSystem procedure invoked after QU have been transferred into this contract.',
+    PRE_ACQUIRE_SHARES:
+        '**PRE_ACQUIRE_SHARES()**\n\nSystem procedure invoked before shares managed by this contract are acquired. Used to accept or reject the transfer.',
+    POST_ACQUIRE_SHARES:
+        '**POST_ACQUIRE_SHARES()**\n\nSystem procedure invoked after shares managed by this contract have been acquired.',
+    PRE_RELEASE_SHARES:
+        '**PRE_RELEASE_SHARES()**\n\nSystem procedure invoked before shares managed by this contract are released.',
+    POST_RELEASE_SHARES:
+        '**POST_RELEASE_SHARES()**\n\nSystem procedure invoked after shares managed by this contract have been released.',
     PUBLIC_PROCEDURE:
         '**PUBLIC_PROCEDURE(Name)**\n\nDeclares a public procedure that can be called by external users. Procedures may modify contract state.\n\nUsage:\n```cpp\nPUBLIC_PROCEDURE(MyProc)\n{\n    // body\n}\n```',
     PUBLIC_FUNCTION:
@@ -328,6 +440,8 @@ const QPI_TYPES: QpiType[] = [
     { name: 'HashMap<K, V, L>', description: 'Hash map with key type K, value type V, capacity L.' },
     { name: 'HashSet<K, L>', description: 'Hash set with key type K, capacity L.' },
     { name: 'Collection<T, L>', description: 'Ordered collection of type T with capacity L.' },
+    { name: 'LinkedList<T, L>', description: 'Doubly-linked list of type T with fixed capacity L (L must be a power of two). O(1) insert at head/tail, insert before/after an index, and removal by index; removed nodes are recycled immediately. Forbidden in the public interface of a contract.' },
+    { name: 'SlowAnySizeArray<T, L>', description: 'Array of L elements of type T allowing any capacity L (not only powers of two), at the cost of slower access. Use only when a specific non-power-of-two L is genuinely needed, e.g. in input/output structs.' },
     { name: 'ContractState<T, N>', description: 'Persistent contract state storage.' },
 
     // Struct types
@@ -429,6 +543,19 @@ const QPI_CONSTANTS: QpiConstant[] = [
     { name: 'INVALID_AMOUNT', detail: 'sint64', description: 'Sentinel value for invalid QU amounts.' },
     { name: 'NUMBER_OF_COMPUTORS', detail: '676', description: 'Total number of computors in the Qubic network.' },
     { name: 'QUORUM', detail: '451', description: 'Minimum number of computors required for consensus.' },
+    { name: 'INVALID_PROPOSAL_INDEX', detail: 'uint16', description: 'Sentinel returned by `qpi.setShareholderProposal()` when the proposal could not be set.' },
+    { name: 'INVALID_VOTE_INDEX', detail: 'uint32', description: 'Sentinel value indicating an invalid vote index.' },
+    { name: 'NO_VOTE_VALUE', detail: 'sint64', description: 'Value representing "no vote cast" in proposal voting.' },
+    { name: 'ORACLE_QUERY_STATUS_UNKNOWN', detail: 'uint8', description: 'Oracle query status: the query id is unknown.' },
+    { name: 'ORACLE_QUERY_STATUS_PENDING', detail: 'uint8', description: 'Oracle query status: the query is waiting to be answered.' },
+    { name: 'ORACLE_QUERY_STATUS_COMMITTED', detail: 'uint8', description: 'Oracle query status: replies have been committed but not yet confirmed.' },
+    { name: 'ORACLE_QUERY_STATUS_SUCCESS', detail: 'uint8', description: 'Oracle query status: the reply has been confirmed and is available.' },
+    { name: 'ORACLE_QUERY_STATUS_UNRESOLVABLE', detail: 'uint8', description: 'Oracle query status: no valid reply, because computors disagreed about the value.' },
+    { name: 'ORACLE_QUERY_STATUS_TIMEOUT', detail: 'uint8', description: 'Oracle query status: no valid reply available and the timeout has hit.' },
+    { name: 'OC_INVOCATION_STATUS_UNKNOWN', detail: 'uint8', description: 'Outsourced-computation status: the invocation id is unknown.' },
+    { name: 'OC_INVOCATION_STATUS_PENDING_AUTH', detail: 'uint8', description: 'Outsourced-computation status: recorded, waiting for QUORUM authorization signatures.' },
+    { name: 'OC_INVOCATION_STATUS_AUTHORIZED', detail: 'uint8', description: 'Outsourced-computation status: QUORUM signatures counted, bundle eligible for delivery.' },
+    { name: 'OC_INVOCATION_STATUS_TIMEOUT', detail: 'uint8', description: 'Outsourced-computation status: authorization did not reach quorum before the timeout.' },
 
     // Letter constants for the ID() macro
     { name: '_A', detail: 'letter constant', description: 'Letter constant `A` used with the `ID()` macro to construct ids.' },
@@ -900,6 +1027,11 @@ function validateContract(
     // not registered in REGISTER_USER_FUNCTIONS_AND_PROCEDURES
     // ----------------------------------------------------------------
     checkUnregisteredEntrypoints(document, text, diagnostics);
+
+    // ----------------------------------------------------------------
+    // Rule 7 (Error): complex container types in the public interface
+    // ----------------------------------------------------------------
+    checkPublicInterfaceTypes(document, text, diagnostics);
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,7 +1210,9 @@ function stripComments(
 // ---------------------------------------------------------------------------
 function isQpiHIncludeLine(commentFree: string): boolean {
     const t = commentFree.trim();
-    return /^#\s*include\s*["<]qpi\.h[">]/.test(t);
+    // As of qubic/core v1.302.x the QPI header lives in src/qpi/ (it was src/contracts/qpi.h
+    // before), so an optional directory prefix such as "qpi/qpi.h" is accepted too.
+    return /^#\s*include\s*["<][\w./-]*qpi\.h[">]/.test(t);
 }
 
 // ---------------------------------------------------------------------------
@@ -1955,4 +2089,64 @@ function buildContractTemplate(name: string): string {
     ];
 
     return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// checkPublicInterfaceTypes - QPI018 Error
+//
+// The input/output structs of contract user procedures and functions may only
+// use integer and boolean types (uint64, sint8, bit, ...) as well as id, Array
+// and BitArray, plus structs built from those. Complex types that may have an
+// inconsistent internal state - Collection, LinkedList, HashMap, HashSet - are
+// forbidden there. See qubic/core doc/contracts.md.
+// ---------------------------------------------------------------------------
+const FORBIDDEN_INTERFACE_TYPES = ['Collection', 'LinkedList', 'HashMap', 'HashSet'];
+
+function checkPublicInterfaceTypes(
+    document: vscode.TextDocument,
+    text: string,
+    diagnostics: vscode.Diagnostic[],
+): void {
+    // Locate `struct <name>_input {` / `struct <name>_output {` blocks and scan
+    // their bodies. Brace counting keeps nested structs inside the block.
+    const structRegex = /\bstruct\s+(\w+_(?:input|output))\s*\{/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = structRegex.exec(text)) !== null) {
+        const structName = match[1];
+        let depth = 1;
+        let i = match.index + match[0].length;
+
+        while (i < text.length && depth > 0) {
+            const ch = text[i];
+            if (ch === '{') {
+                depth++;
+            } else if (ch === '}') {
+                depth--;
+            }
+            i++;
+        }
+
+        const bodyStart = match.index + match[0].length;
+        const body = text.slice(bodyStart, Math.max(bodyStart, i - 1));
+
+        for (const typeName of FORBIDDEN_INTERFACE_TYPES) {
+            const typeRegex = new RegExp('\\b' + typeName + '\\s*<', 'g');
+            let hit: RegExpExecArray | null;
+
+            while ((hit = typeRegex.exec(body)) !== null) {
+                const absolute = bodyStart + hit.index;
+                const start = document.positionAt(absolute);
+                const end = document.positionAt(absolute + typeName.length);
+                const diagnostic = new vscode.Diagnostic(
+                    new vscode.Range(start, end),
+                    `'${typeName}' is not allowed in '${structName}'. The input/output structs of public procedures and functions may only use integer and boolean types, id, Array, BitArray, and structs of those - complex containers may have an inconsistent internal state.`,
+                    vscode.DiagnosticSeverity.Error,
+                );
+                diagnostic.source = 'qubic-qpi';
+                diagnostic.code = 'QPI018';
+                diagnostics.push(diagnostic);
+            }
+        }
+    }
 }

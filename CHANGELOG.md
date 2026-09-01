@@ -2,6 +2,31 @@
 
 All notable changes to this extension are documented here.
 
+## [1.2.0] - 2026-09-01
+
+Sync with qubic/core v1.302.1 (Epoch 226). Previous baseline was v1.286.0 (Epoch 208).
+
+### Added
+- 8 QPI context methods: `computeMiningFunction`, `setShareholderProposal`,
+  `setShareholderVotes`, `getOracleQuery`, `getOracleQueryStatus`, `getOracleReply`,
+  `unsubscribeOracle`, `getOcInvocationStatus`
+- Container types `LinkedList<T, L>` and `SlowAnySizeArray<T, L>`
+- Oracle and outsourced-computation status constants (`ORACLE_QUERY_STATUS_*`,
+  `OC_INVOCATION_STATUS_*`), plus `INVALID_PROPOSAL_INDEX`, `INVALID_VOTE_INDEX`, `NO_VOTE_VALUE`
+- Hover documentation for ~32 previously undocumented macros (private entry points,
+  `*_WITH_LOCALS` variants, `INITIALIZE`, `EXPAND`, `MIGRATE`, cross-contract calls,
+  oracle/OC macros, `LOG_*`, share and transfer system procedures)
+- Syntax highlighting for 58 QPI macros (previously 9)
+- **QPI018** (Error): complex containers (`Collection`, `LinkedList`, `HashMap`, `HashSet`)
+  are forbidden in `<name>_input` / `<name>_output` structs of public procedures and functions
+- Test harness can now drive the real compiled linter (`realDiagsForText`), not only the
+  re-implemented rule mirror; 9 new tests (72 total)
+
+### Changed
+- `QPI001` accepts directory-prefixed includes such as `#include "qpi/qpi.h"` as a Warning,
+  matching the new `src/qpi/` layout in core v1.302.x (previously reported as an Error)
+- README compatibility note now tracks v1.302.1 / Epoch 226
+
 ## [1.1.0] - 2026-04-13
 
 ### Added

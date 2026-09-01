@@ -58,17 +58,25 @@ class Hover {
 }
 
 // Intercept registrations — we only care that they are called
+// Captured diagnostics from the REAL extension linter, keyed by document uri.
+const _realDiagnostics = new Map();
+
 const languages = {
     createDiagnosticCollection: () => ({
-        set: () => {}, delete: () => {}, clear: () => {}, dispose: () => {},
+        set: (uri, diags) => { _realDiagnostics.set(uri, diags); },
+        delete: (uri) => { _realDiagnostics.delete(uri); },
+        clear: () => { _realDiagnostics.clear(); },
+        dispose: () => {},
     }),
     registerCompletionItemProvider: (_selector, provider, _trigger) => provider,
     registerHoverProvider:          (_selector, provider)          => provider,
 };
 
+const _openHandlers = [];
+
 const workspace = {
     textDocuments: [],
-    onDidOpenTextDocument:   () => ({ dispose: () => {} }),
+    onDidOpenTextDocument:   (fn) => { _openHandlers.push(fn); return { dispose: () => {} }; },
     onDidSaveTextDocument:   () => ({ dispose: () => {} }),
     onDidChangeTextDocument: () => ({ dispose: () => {} }),
 };
@@ -115,10 +123,12 @@ const ext = require('../../out/extension.js');
 // ---------------------------------------------------------------------------
 // Helpers — build a fake TextDocument from a multiline string
 // ---------------------------------------------------------------------------
+let _docSeq = 0;
 function makeDocument(content) {
     const lines = content.split('\n');
     return {
         fileName: 'TestContract.h',
+        uri: { toString: () => 'file:///TestContract.h#' + (_docSeq++) },
         getText:  () => content,
         lineCount: lines.length,
         lineAt:   (i) => ({ text: lines[i] }),
@@ -532,6 +542,25 @@ function diagsForText(content) {
     return diagnostics;
 }
 
+
+// ---------------------------------------------------------------------------
+// realDiagsForText - drives the REAL compiled linter (out/extension.js) via the
+// onDidOpenTextDocument handler registered during activate(), and returns the
+// diagnostics it produced. Unlike diagsForText (which re-implements the rules
+// for fast unit checks), this exercises the shipped code path.
+// ---------------------------------------------------------------------------
+function realDiagsForText(content) {
+    const doc = makeDocument(content);
+    _realDiagnostics.clear();
+    for (const fn of _openHandlers) {
+        fn(doc);
+    }
+    for (const [, diags] of _realDiagnostics) {
+        if (diags && diags.length) return diags;
+    }
+    return [];
+}
+
 function hasDiag(diags, code) { return diags.some(d => d.code === code); }
 function countDiag(diags, code) { return diags.filter(d => d.code === code).length; }
 
@@ -797,6 +826,55 @@ section('Hover — hover provider');
     };
     const noHover = _hoverProvider.provideHover(plainDoc, { line: 0, character: 0 });
     assert(noHover === undefined, 'No hover for non-QPI file');
+}
+
+// -- QPI018 / v1.302.1 sync -- driven through the REAL linter ----------------
+section('QPI018 - forbidden container types in the public interface');
+{
+    const mk = (body) => 'struct T : public ContractBase' + String.fromCharCode(10) + '{' + String.fromCharCode(10) +
+        body + String.fromCharCode(10) +
+        'PUBLIC_PROCEDURE(Test)' + String.fromCharCode(10) + '{' + String.fromCharCode(10) + '}' + String.fromCharCode(10) +
+        'REGISTER_USER_FUNCTIONS_AND_PROCEDURES' + String.fromCharCode(10) + '{' + String.fromCharCode(10) +
+        '    REGISTER_USER_PROCEDURE(Test, 1);' + String.fromCharCode(10) + '}' + String.fromCharCode(10) +
+        'BEGIN_EPOCH' + String.fromCharCode(10) + '{' + String.fromCharCode(10) + '}' + String.fromCharCode(10) + 'END_EPOCH' + String.fromCharCode(10) +
+        'BEGIN_TICK' + String.fromCharCode(10) + '{' + String.fromCharCode(10) + '}' + String.fromCharCode(10) + 'END_TICK' + String.fromCharCode(10) + '};';
+
+    // sanity: the bridge reaches the real linter at all
+    assert(realDiagsForText(mk('struct lock_input { uint64 amount; };')).length >= 0,
+        'real linter bridge is callable');
+
+    assert(hasDiag(realDiagsForText(mk('struct lock_input { Collection<uint64, 8> c; };')), 'QPI018'),
+        'Collection in <name>_input -> QPI018');
+
+    assert(hasDiag(realDiagsForText(mk('struct lock_output { LinkedList<uint64, 8> l; };')), 'QPI018'),
+        'LinkedList in <name>_output -> QPI018');
+
+    assert(hasDiag(realDiagsForText(mk('struct get_input { HashMap<id, uint64, 8> m; };')), 'QPI018'),
+        'HashMap in <name>_input -> QPI018');
+
+    assert(!hasDiag(realDiagsForText(mk('struct lock_input { uint64 amount; Array<uint8, 4> a; };')), 'QPI018'),
+        'Array/integer members in input struct -> no QPI018');
+
+    // A container OUTSIDE an input/output struct is legitimate contract state.
+    assert(!hasDiag(realDiagsForText(mk('struct StateData { Collection<uint64, 8> c; };')), 'QPI018'),
+        'Collection in StateData (not public interface) -> no QPI018');
+}
+
+section('QPI001 - qpi.h include path variants (core v1.302.x moved to src/qpi/)');
+{
+    const withInclude = (inc) => inc + String.fromCharCode(10) + ANCHOR;
+
+    const dOld = realDiagsForText(withInclude('#include \"qpi.h\"'));
+    assert(dOld.some(d => d.code === 'QPI001' && d.severity === DiagnosticSeverity.Warning),
+        'plain qpi.h include -> QPI001 Warning');
+
+    const dNew = realDiagsForText(withInclude('#include \"qpi/qpi.h\"'));
+    assert(dNew.some(d => d.code === 'QPI001' && d.severity === DiagnosticSeverity.Warning),
+        'qpi/qpi.h include (new core layout) -> QPI001 Warning, not Error');
+
+    const dOther = realDiagsForText(withInclude('#include \"stdio.h\"'));
+    assert(dOther.some(d => d.code === 'QPI001' && d.severity === DiagnosticSeverity.Error),
+        'unrelated header include -> QPI001 Error');
 }
 
 // ── QPI017 — doc-comment procedure/function coverage ─────────────────────
